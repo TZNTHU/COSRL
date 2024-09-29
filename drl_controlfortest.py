@@ -9,18 +9,82 @@ import random
 from torch.utils.tensorboard import SummaryWriter
 
 from tianshou.data import Collector, ReplayBuffer, VectorReplayBuffer
-from tianshou.policy import DDPGPolicy, SACPolicy
+from tianshou.policy import DDPGPolicy, SACPolicy, PPOPolicy
 from tianshou.trainer import offpolicy_trainer
 from tianshou.utils import TensorboardLogger, WandbLogger
 from tianshou.utils.net.common import Net
 from tianshou.utils.net.continuous import Actor, ActorProb, Critic
 from tianshou.exploration import GaussianNoise
+from torch.distributions import Independent, Normal
 
 from tianshou.env import DummyVectorEnv, SubprocVectorEnv
 
 from myenv.ECFST_Env import ECS_Env
 
 
+# create policy PPO 
+def create_policy_ppo(hidden_sizes = [64,64],gamma = 0.99,actor_lr = 1e-4,critic_lr = 1e-4,device="cuda" if torch.cuda.is_available() else "cpu"):
+    env = ECS_Env(random_seed_ref=random.randint(0,10000))
+    state_shape = env.observation_space.shape
+    action_shape = env.action_space.shape
+    max_action = env.action_space.high[0]
+    net_a = Net(state_shape=state_shape,hidden_sizes=hidden_sizes,activation=torch.nn.Tanh,device=device)
+    actor = ActorProb(
+        net_a,
+        action_shape,
+        max_action=max_action,
+        device=device,
+        unbounded=True,
+        conditioned_sigma=True,
+    ).to(device)
+    #actor_optim = torch.optim.Adam(actor.parameters(),lr = actor_lr)
+    net_c = Net(
+        state_shape=state_shape,
+        action_shape= action_shape,
+        hidden_sizes=hidden_sizes,
+        activation=torch.nn.Tanh,
+        #concat=True,
+        device=device,
+    )
+    critic = Critic(net_c,device= device).to(device)
+    #torch.nn.init.constant_(actor.sigma_param, -0.5)
+    for m in list(actor.modules()) + list(critic.modules()):
+        if isinstance(m, torch.nn.Linear):
+            # orthogonal initialization
+            #torch.nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
+            torch.nn.init.xavier_uniform_(m.weight)
+            torch.nn.init.zeros_(m.bias)
+    # do last policy layer scaling, this will make initial actions have (close to)
+    # 0 mean and std, and will help boost performances,
+    # see https://arxiv.org/abs/2006.05990, Fig.24 for details
+    for m in actor.mu.modules():
+        if isinstance(m, torch.nn.Linear):
+            torch.nn.init.zeros_(m.bias)
+            m.weight.data.copy_(0.01 * m.weight.data)
+    #critic_optim = torch.optim.Adam(critic.parameters(),lr = critic_lr)
+    optim = torch.optim.Adam(list(actor.parameters())+list(critic.parameters()),lr = actor_lr)
+
+    def dist(*logits):
+        return Independent(Normal(*logits), 1)
+    
+    policy = PPOPolicy(
+        actor,
+        critic,
+        optim,
+        dist_fn=dist,
+        discount_factor=gamma,
+        max_grad_norm=0.5,
+        eps_clip=0.2,
+        vf_coef=0.1,
+        ent_coef=0.01,
+        #reward_normalization=True,
+        action_scaling=True,
+        action_bound_method='clip',
+        gae_lambda=0.95,
+        action_space=env.action_space      
+    )
+
+    return policy
 
 # create policy
 def create_policy_sac(hidden_sizes=[64,64], gamma=0.99, actor_lr=1E-4, 
@@ -176,7 +240,8 @@ def train_policy(policy, experiment, algo_name, epoch, nstep_per_episode=1150, b
 def load_policy(policy, experiment):
     
     # path
-    algo_name = "sac"
+    #algo_name = "sac"
+    algo_name = 'ppo'
     log_name = os.path.join("PenSim-v1", algo_name, str(experiment))
     log_path = os.path.join("log", log_name)
     

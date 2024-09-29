@@ -9,12 +9,13 @@ import random
 from torch.utils.tensorboard import SummaryWriter
 
 from tianshou.data import Collector, ReplayBuffer, VectorReplayBuffer
-from tianshou.policy import DDPGPolicy, SACPolicy
+from tianshou.policy import DDPGPolicy, SACPolicy, PPOPolicy
 from tianshou.trainer import offpolicy_trainer,onpolicy_trainer
 from tianshou.utils import TensorboardLogger, WandbLogger
 from tianshou.utils.net.common import Net
 from tianshou.utils.net.continuous import Actor, ActorProb, Critic
 from tianshou.exploration import GaussianNoise
+from torch.distributions import Independent, Normal
 
 from tianshou.env import DummyVectorEnv, SubprocVectorEnv
 
@@ -30,6 +31,72 @@ def set_seed(seed):
     # 确保所有的操作都是确定性的
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+# create policy PPO 
+def create_policy_ppo(hidden_sizes = [64,64],gamma = 0.99,actor_lr = 1e-4,critic_lr = 1e-4,device="cuda" if torch.cuda.is_available() else "cpu"):
+    env = ECS_Env(random_seed_ref=random.randint(0,10000))
+    state_shape = env.observation_space.shape
+    action_shape = env.action_space.shape
+    max_action = env.action_space.high[0]
+    net_a = Net(state_shape=state_shape,hidden_sizes=hidden_sizes,activation=torch.nn.Tanh,device=device)
+    actor = ActorProb(
+        net_a,
+        action_shape,
+        max_action=max_action,
+        device=device,
+        unbounded=True,
+        conditioned_sigma=True,
+    ).to(device)
+    #actor_optim = torch.optim.Adam(actor.parameters(),lr = actor_lr)
+    net_c = Net(
+        state_shape=state_shape,
+        action_shape= action_shape,
+        hidden_sizes=hidden_sizes,
+        activation=torch.nn.Tanh,
+        #concat=True,
+        device=device,
+    )
+    critic = Critic(net_c,device= device).to(device)
+    #torch.nn.init.constant_(actor.sigma_param, -0.5)
+    for m in list(actor.modules()) + list(critic.modules()):
+        if isinstance(m, torch.nn.Linear):
+            # orthogonal initialization
+            #torch.nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
+            torch.nn.init.xavier_uniform_(m.weight)
+            torch.nn.init.zeros_(m.bias)
+    # do last policy layer scaling, this will make initial actions have (close to)
+    # 0 mean and std, and will help boost performances,
+    # see https://arxiv.org/abs/2006.05990, Fig.24 for details
+    for m in actor.mu.modules():
+        if isinstance(m, torch.nn.Linear):
+            torch.nn.init.zeros_(m.bias)
+            m.weight.data.copy_(0.01 * m.weight.data)
+    #critic_optim = torch.optim.Adam(critic.parameters(),lr = critic_lr)
+    optim = torch.optim.Adam(list(actor.parameters())+list(critic.parameters()),lr = actor_lr)
+
+    def dist(*logits):
+        return Independent(Normal(*logits), 1)
+    
+    policy = PPOPolicy(
+        actor,
+        critic,
+        optim,
+        dist_fn=dist,
+        discount_factor=gamma,
+        max_grad_norm=0.5,
+        eps_clip=0.2,
+        vf_coef=0.1,
+        ent_coef=0.01,
+        #reward_normalization=True,
+        action_scaling=True,
+        action_bound_method='clip',
+        gae_lambda=0.95,
+        action_space=env.action_space      
+    )
+
+    return policy
+
+
 
 
 
@@ -167,22 +234,22 @@ def train_policy(policy, experiment, algo_name, epoch, nstep_per_episode=1150, b
     rewls = []
     
 
-    def save_checkpoint_fn(epoch,env_step,gradient_step):
+    # def save_checkpoint_fn(epoch,env_step,gradient_step):
         
-        batch, indices = train_collector.buffer.sample(batch_size)
-        # batch.returns = compute_returns(batch, 0.99)
-        batch = policy.process_fn(batch,buffer,indices)
-        loss = policy.learn(batch)
-        # # #loss = policy._last_loss
+    #     batch, indices = train_collector.buffer.sample(batch_size)
+    #     # batch.returns = compute_returns(batch, 0.99)
+    #     batch = policy.process_fn(batch,buffer,indices)
+    #     loss = policy.learn(batch)
+    #     # # #loss = policy._last_loss
 
-        actor_loss_values.append(loss['loss/actor'])
-        critic1_loss_values.append(loss['loss/critic1'])
-        critic2_loss_values.append(loss['loss/critic2'])
-        #alpha_loss_values.append(loss['loss/alpha'])
+    #     actor_loss_values.append(loss['loss/actor'])
+    #     critic1_loss_values.append(loss['loss/critic1'])
+    #     critic2_loss_values.append(loss['loss/critic2'])
+    #     #alpha_loss_values.append(loss['loss/alpha'])
     
-    def save_reward_fn(rew):
-        rewls.append(rew.mean())
-        return rew
+    # def save_reward_fn(rew):
+    #     rewls.append(rew.mean())
+    #     return rew
         
     
     def save_best_fn(policy):
@@ -192,18 +259,19 @@ def train_policy(policy, experiment, algo_name, epoch, nstep_per_episode=1150, b
             policy,
             train_collector,
             test_collector,
-            epoch,
-            nstep_per_episode,
-            1,
-            test_num,
-            batch_size,
+            max_epoch = epoch,
+            step_per_epoch = nstep_per_episode,
+            repeat_per_collect = 1,
+            episode_per_test = test_num,
+            step_per_collect = 5,
+            batch_size = batch_size,
             save_best_fn=save_best_fn,
             logger=logger,
             update_per_step=1,
             test_in_train=False,
             #callback_fn = callback_fn
-            save_checkpoint_fn = save_checkpoint_fn,
-            reward_metric = save_reward_fn
+            #save_checkpoint_fn = save_checkpoint_fn,
+            #reward_metric = save_reward_fn
         )
     pprint.pprint(result)
         
@@ -230,7 +298,7 @@ def train_policy_on(policy, experiment, algo_name, epoch, nstep_per_episode=1150
     
     train_collector = Collector(policy, train_envs, buffer, exploration_noise=True)
     test_collector = Collector(policy, test_envs)
-    train_collector.collect(n_episode=20, random=False)
+    train_collector.collect(n_episode=20, random=True)
     
     log_name = os.path.join("PenSim-v1", algo_name, str(experiment))
     log_path = os.path.join("log", log_name)

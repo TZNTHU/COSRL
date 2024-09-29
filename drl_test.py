@@ -19,7 +19,7 @@ epoch = 500 #1000 # 100000
 train_num = 5
 test_num = 1 
 buffer_size = 100000
-algo_name = "sac" # "sac"
+#algo_name = "sac" # "sac"
 
 
 
@@ -27,8 +27,9 @@ if __name__ == '__main__':
     # create policy
     for i in range(1):
         time_start = time.perf_counter()
-        policy = create_policy_sac(net, gamma, actor_lr, critic_lr, alpha_lr)
-        policy = load_policy(policy, 90)
+        #policy = create_policy_sac(net, gamma, actor_lr, critic_lr, alpha_lr)
+        policy = create_policy_ppo(net, gamma, actor_lr, critic_lr)
+        policy = load_policy(policy, 1)
         # policy = create_policy_ddpg(net, gamma, actor_lr, critic_lr)
         policy.eval()
         test = DummyVectorEnv([lambda: ECS_Env() for _ in range(test_num)])

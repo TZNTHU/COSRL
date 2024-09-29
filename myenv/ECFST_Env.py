@@ -297,101 +297,109 @@ class ECS_Env(gym.Env):
         FCTU = np.hstack((carry1,carry2,carry3,carry4))
         WCT = WC_old + FCPT - FCTU
         WT = np.sum(WCT,axis=1).reshape(-1,1)
-        f = WCT/WT
-        # tstorage = range_restrict(self.wl,self.wu,WT)
-        # tankstorage_penalty = 4 * np.sum(tstorage) * self.penalty#储罐油量不处于上下限内
-        [tstorage1,tstroage2] = range_restrict_Wt(self.wl,self.wu,WT)
-        tankstorage_penalty = (np.sum(tstorage1) + 3.0 * np.sum(tstroage2)) * self.penalty#储罐油量不处于上下限内
-        # initial_penalty_coefficient = 10
-        # final_penalty_coefficient = 100
-        # penalty_coefficient = min(final_penalty_coefficient, initial_penalty_coefficient * (1 + 2*self.i_day ))
-        brine_penalty = np.sum(XT_old + XD > 1) * self.penalty
+        if np.any(WT < 10) is True:
+            M = 1e10
+            self.state = np.hstack((np.full((1,6),0),np.full((1,24),0),np.full((1,24),0),np.full((1,12),0),np.full((1,12),0),M)).flatten()
+            self.trajectory.append(self.state)
+            done = True
+            reward = -M
+            return self.state, reward, done, self.info
+        else:
+            f = WCT/WT
+            # tstorage = range_restrict(self.wl,self.wu,WT)
+            # tankstorage_penalty = 4 * np.sum(tstorage) * self.penalty#储罐油量不处于上下限内
+            [tstorage1,tstroage2] = range_restrict_Wt(self.wl,self.wu,WT)
+            tankstorage_penalty = (np.sum(tstorage1) + 3.0 * np.sum(tstroage2)) * self.penalty#储罐油量不处于上下限内
+            # initial_penalty_coefficient = 10
+            # final_penalty_coefficient = 100
+            # penalty_coefficient = min(final_penalty_coefficient, initial_penalty_coefficient * (1 + 2*self.i_day ))
+            brine_penalty = np.sum(XT_old + XD > 1) * self.penalty
 
-        FU = np.array([np.sum(FTU,axis=0)])
-        carry1 = np.sum(FCTU1,axis=0)
-        carry2 = np.sum(FCTU2,axis=0)
-        carry3 = np.sum(FCTU3,axis=0)
-        carry4 = np.sum(FCTU4,axis=0)
-        FCTUS = np.vstack((carry1,carry2,carry3,carry4))
-        FCTUSL = FU * self.xcl
-        FCTUSU = FU * self.xcu
-        FUk = np.dot(self.xk,FCTUS)
-        FUkl = FU * self.xkl
-        FUku = FU * self.xku
-        pg = np.array([np.sum(FCTUS * self.yieldg,axis=0)])
-        pd = np.array([np.sum(FCTUS * self.yieldd,axis=0)])
-        pr = np.array([np.sum(FCTUS * self.yieldr,axis=0)])
-        CO = change(self.i_day,Y,Y_old)
-        cdurate = range_restrict(self.ful,self.fuu,np.array([np.sum(init_FTU,axis=0)]))
-        compostion = range_restrict(FCTUSL,FCTUSU,FCTUS)
-        oil_property = range_restrict(FUkl,FUku,FUk)
-        productg = range_restrict(self.pgl,self.pgu,pg)
-        productd = range_restrict(self.pdl,self.pdu,pd)
-        productr = range_restrict(self.prl,self.pru,pr)
-        cdurate_penalty = np.sum(cdurate) * self.penalty#处理量不处于上下限内
-        composition_penalty = np.sum(compostion) * self.penalty#原油组成不处于上下限内
-        property_penalty = np.sum(oil_property) * self.penalty#原油性质不处于上下限内
-        product_penalty = (np.sum(productg) + np.sum(productd) + np.sum(productr))*self.penalty#产品量不处于上下限内
-        change_penalty = np.sum(CO) * self.coc 
-        source_penalty = np.sum(supplychange) * self.penalty / 2
-        oil_cost = np.dot(self.price,np.sum(FCTUS,axis = 1))
-        #limit_penalty = 0.0 * extra_penalty + tankstorage_penalty
-        #process_penalty = 0.2 * composition_penalty  + 1.5 * product_penalty + 0.5*source_penalty + 1.5 * property_penalty
-        #expense = delay_penalty + change_penalty + oil_cost
-        #expense_penalty = delay_penalty + change_penalty + oil_cost
-        #reward =  - 0.4 * limit_penalty - 0.4 * process_penalty - 0.3 * expense_penalty
-        omega1 = np.array([1.0,1.5,1.0,1.0,1.0,1.5,1.0,1.0,1.0]).reshape(9,1)
-        penalty = np.array([np.array(extra_penalty).reshape(1,),np.array(tankstorage_penalty).reshape(1,),np.array(composition_penalty).reshape(1,),np.array(product_penalty).reshape(1,),np.array(source_penalty).reshape(1,),np.array(property_penalty).reshape(1,),np.array(delay_penalty).reshape(1,),np.array(change_penalty).reshape(1,),np.array(oil_cost).reshape(1,)]).reshape(9,1)
-        #limit_penalty = 0.0 * extra_penalty + tankstorage_penalty
-        #process_penalty = 0.2 * composition_penalty  + 1.5 * product_penalty + 0.5 * source_penalty +   1.5 * property_penalty
-        expense = delay_penalty + change_penalty + oil_cost
-        for i in range(6):
-            if penalty[i,0] != 0:
-                #print(f"{penalty[i,0]}test@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
-                self.weight[i] += 1
-        #expense_penalty = delay_penalty + change_penalty + oil_cost
-        reward =  - 0.3 * np.dot(omega1[0:2,0],penalty[0:2,0]) - 0.3 * np.dot(omega1[2:5,0],penalty[2:5,0])#-10000*np.sum(self.weight)
-        total_expense = expense + expense_old
+            FU = np.array([np.sum(FTU,axis=0)])
+            carry1 = np.sum(FCTU1,axis=0)
+            carry2 = np.sum(FCTU2,axis=0)
+            carry3 = np.sum(FCTU3,axis=0)
+            carry4 = np.sum(FCTU4,axis=0)
+            FCTUS = np.vstack((carry1,carry2,carry3,carry4))
+            FCTUSL = FU * self.xcl
+            FCTUSU = FU * self.xcu
+            FUk = np.dot(self.xk,FCTUS)
+            FUkl = FU * self.xkl
+            FUku = FU * self.xku
+            pg = np.array([np.sum(FCTUS * self.yieldg,axis=0)])
+            pd = np.array([np.sum(FCTUS * self.yieldd,axis=0)])
+            pr = np.array([np.sum(FCTUS * self.yieldr,axis=0)])
+            CO = change(self.i_day,Y,Y_old)
+            cdurate = range_restrict(self.ful,self.fuu,np.array([np.sum(init_FTU,axis=0)]))
+            compostion = range_restrict(FCTUSL,FCTUSU,FCTUS)
+            oil_property = range_restrict(FUkl,FUku,FUk)
+            productg = range_restrict(self.pgl,self.pgu,pg)
+            productd = range_restrict(self.pdl,self.pdu,pd)
+            productr = range_restrict(self.prl,self.pru,pr)
+            cdurate_penalty = np.sum(cdurate) * self.penalty#处理量不处于上下限内
+            composition_penalty = np.sum(compostion) * self.penalty#原油组成不处于上下限内
+            property_penalty = np.sum(oil_property) * self.penalty#原油性质不处于上下限内
+            product_penalty = (np.sum(productg) + np.sum(productd) + np.sum(productr))*self.penalty#产品量不处于上下限内
+            change_penalty = np.sum(CO) * self.coc 
+            source_penalty = np.sum(supplychange) * self.penalty / 2
+            oil_cost = np.dot(self.price,np.sum(FCTUS,axis = 1))
+            #limit_penalty = 0.0 * extra_penalty + tankstorage_penalty
+            #process_penalty = 0.2 * composition_penalty  + 1.5 * product_penalty + 0.5*source_penalty + 1.5 * property_penalty
+            #expense = delay_penalty + change_penalty + oil_cost
+            #expense_penalty = delay_penalty + change_penalty + oil_cost
+            #reward =  - 0.4 * limit_penalty - 0.4 * process_penalty - 0.3 * expense_penalty
+            omega1 = np.array([1.0,1.5,1.0,1.0,1.0,1.5,1.0,1.0,1.0]).reshape(9,1)
+            penalty = np.array([np.array(extra_penalty).reshape(1,),np.array(tankstorage_penalty).reshape(1,),np.array(composition_penalty).reshape(1,),np.array(product_penalty).reshape(1,),np.array(source_penalty).reshape(1,),np.array(property_penalty).reshape(1,),np.array(delay_penalty).reshape(1,),np.array(change_penalty).reshape(1,),np.array(oil_cost).reshape(1,)]).reshape(9,1)
+            #limit_penalty = 0.0 * extra_penalty + tankstorage_penalty
+            #process_penalty = 0.2 * composition_penalty  + 1.5 * product_penalty + 0.5 * source_penalty +   1.5 * property_penalty
+            expense = delay_penalty + change_penalty + oil_cost
+            for i in range(6):
+                if penalty[i,0] != 0:
+                    #print(f"{penalty[i,0]}test@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+                    self.weight[i] += 1
+            #expense_penalty = delay_penalty + change_penalty + oil_cost
+            reward =  - 0.3 * np.dot(omega1[0:2,0],penalty[0:2,0]) - 0.3 * np.dot(omega1[2:5,0],penalty[2:5,0])#-10000*np.sum(self.weight)
+            total_expense = expense + expense_old
 
-        self.state = np.hstack((np.reshape(XT,(1,6)),np.reshape(WCT,(1,24)),np.reshape(f,(1,24)),np.reshape(Y,(1,12)),np.reshape(FTU,(1,12)),total_expense)).flatten()
-        self.trajectory.append(self.state)
-        done = bool(self.i_day>=self.ep_len-1)
-        reward = reward / 100000.0
-        total_expense = expense + expense_old
+            self.state = np.hstack((np.reshape(XT,(1,6)),np.reshape(WCT,(1,24)),np.reshape(f,(1,24)),np.reshape(Y,(1,12)),np.reshape(FTU,(1,12)),total_expense)).flatten()
+            self.trajectory.append(self.state)
+            done = bool(self.i_day>=self.ep_len-1)
+            reward = reward / 100000.0
+            total_expense = expense + expense_old
 
-        
-        self.score += np.dot(self.weight,self.value)
             
-        #print(f"总惩罚：{limit_penalty,process_penalty,expense_penalty}")
-        print(f"是否有两艘油轮同一天到达={extra_penalty}\n")
-        print(f"港口存储管是否存在超出上限={tankstorage_penalty}\n")
-        print(f"卸油次日即使用={brine_penalty}\n")
-        #print("流量{}".format(cdurate_penalty))
-        #print("*")
-        print(f"原油进料组成超出范围={composition_penalty}\n")
-        print(f"原油进料性质超出范围={property_penalty}\n")
-        print(F"产品油比例超出范围={product_penalty}\n")
-        #print("*")
-        print(f"是否存在油轮等待时间={delay_penalty}\n")
-        print(f"装置切换成本={change_penalty}\n")
-        #print(expense)
-        #print(reward)
-        print("FPT")
-        print(FPT)
-        print("FTU")
-        print(FTU)
-        print("WT")
-        print(WT)
-        print(self.score,self.weight[1],self.weight[3],self.weight[5])
-        # print("FCTUS")
-        # print(FCTUS)
-        #print("init_FTU")
-        #print(init_FTU)
-        print(total_expense)
-        print('----------------------------------------------------------')
-        self.i_day += 1
+            self.score += np.dot(self.weight,self.value)
+                
+            #print(f"总惩罚：{limit_penalty,process_penalty,expense_penalty}")
+            print(f"是否有两艘油轮同一天到达={extra_penalty}\n")
+            print(f"港口存储管是否存在超出上限={tankstorage_penalty}\n")
+            print(f"卸油次日即使用={brine_penalty}\n")
+            #print("流量{}".format(cdurate_penalty))
+            #print("*")
+            print(f"原油进料组成超出范围={composition_penalty}\n")
+            print(f"原油进料性质超出范围={property_penalty}\n")
+            print(F"产品油比例超出范围={product_penalty}\n")
+            #print("*")
+            print(f"是否存在油轮等待时间={delay_penalty}\n")
+            print(f"装置切换成本={change_penalty}\n")
+            #print(expense)
+            #print(reward)
+            print("FPT")
+            print(FPT)
+            print("FTU")
+            print(FTU)
+            print("WT")
+            print(WT)
+            print(self.score,self.weight[1],self.weight[3],self.weight[5])
+            # print("FCTUS")
+            # print(FCTUS)
+            #print("init_FTU")
+            #print(init_FTU)
+            print(total_expense)
+            print('----------------------------------------------------------')
+            self.i_day += 1
 
-        return self.state, reward, done, self.info 
+            return self.state, reward, done, self.info 
 
     def seed(self, seed):
         np.random.seed(seed)

@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 from tianshou.data import Batch
 from copy import deepcopy
 from drl_control import *
-
+import random
 # exp = 66
 # n_net = 3
 # net = [256]*n_net
@@ -44,7 +44,7 @@ def set_seed(seed):
 
 #     rew_avg, rew_std = train_policy(policy, exp , algo_name, epoch, nstep_per_episode, batch_size,train_num, test_num, buffer_size)
 
-def drl_train(exp=68,gamma = 0.99,actor_lr = 1e-5,critic_lr = 1e-5,alpha_lr = 1e-4,batch_size = 256,epoch = 2000,train_num = 5,test_num = 10,seed = 42,w1 = 0.3,w2 = 0.3,w3 = 0.0,tankstorage_w = 1.5,product_w = 1.0,property_w = 1.5):
+def drl_train(exp,gamma = 0.99,actor_lr = 1e-5,critic_lr = 1e-5,alpha_lr = 1e-4,batch_size = 256,epoch = 2000,train_num = 5,test_num = 10,seed = 42,w1 = 0.3,w2 = 0.3,w3 = 0.0,tankstorage_w = 1.5,product_w = 1.0,property_w = 1.5):
     n_net = 3
     net = [256]*n_net
     nstep_per_episode = 7
@@ -53,24 +53,14 @@ def drl_train(exp=68,gamma = 0.99,actor_lr = 1e-5,critic_lr = 1e-5,alpha_lr = 1e
     set_seed(seed)
     w = [1.0,tankstorage_w,1.0,product_w,1.0,property_w,1.0,1.0,1.0]
     policy = create_policy_sac(net, gamma, actor_lr, critic_lr, alpha_lr,seed=seed,w1=w1,w2=w2,w3=w3,weight=w,auto_alpha=False)
-    rew_avg, rew_std, reward, lens, actor_loss, critic1_loss, critic2_loss,rew = train_policy(policy, exp , algo_name, epoch, nstep_per_episode, batch_size,train_num, test_num, buffer_size,seed= seed)
+    #policy = create_policy_ppo(net,gamma,actor_lr,critic_lr)
+    rew_avg, rew_std= train_policy_on(policy, exp , algo_name, epoch, nstep_per_episode, batch_size,train_num, test_num, buffer_size)
     
-    return rew, lens, actor_loss, critic1_loss, critic2_loss
 
-# if __name__ == '__main__':
-#     for i in range(5):
-#         #seed_list = [0,34,51]
-#         a = np.random.randint(0,100)
-#         rew, lens, actor_loss, critic1_loss, critic2_loss= drl_train(exp=97+i,seed=a,epoch=1000,w3=0.0)
+
 if __name__ =='__main__':
-    rew, lens, actor_loss, critic1_loss, critic2_loss= drl_train(exp=102,seed=0,epoch=1000,w3=0.0)
-    #print(len(critic1_loss),len(critic2_loss),len(rew))
-    #print(critic1_loss[-1],critic2_loss[-1],rew[-1])
-    #print(critic1_loss,critic2_loss,rew)
-# if __name__ == '__main__':
-#     for i in range(3):
-#         seed_list = [0,35,50]
-#         _,_,_,_,_,_ = drl_train(exp=66+i,seed=seed_list[i])
+    drl_train(exp=1,seed=random.randint(0,10000),epoch=1000)
+
 
 
 #查看训练曲线：在终端输入“tensorboard --logdir="路径"”回车即可。“路径”指向本python文件所处文件夹的log文件，例：E:\project\reinforcement\tianshou-0.4.8\log

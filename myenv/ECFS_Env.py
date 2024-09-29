@@ -305,66 +305,75 @@ class ECS_Env(gym.Env):
         FCTU = np.hstack((carry1,carry2,carry3,carry4))
         WCT = WC_old + FCPT - FCTU
         WT = np.sum(WCT,axis=1).reshape(-1,1)
-        f = WCT/WT
-        [tstorage1,tstroage2] = range_restrict_Wt(self.wl,self.wu,WT)
-        tankstorage_penalty = (np.sum(tstorage1) + 3.0 * np.sum(tstroage2)) * self.penalty#储罐油量不处于上下限内
-        brine_penalty = np.sum(XT_old + XD > 1) * self.penalty
+        if np.any(WT < 10) is True:
+            M = 1e10
+            self.state = np.hstack((np.full((1,6),0),np.full((1,24),0),np.full((1,24),0),np.full((1,12),0),np.full((1,12),0),M)).flatten()
+            self.trajectory.append(self.state)
+            done = True
+            reward = -M
+            return self.state, reward, done, self.info
+        else:
 
-        FU = np.array([np.sum(FTU,axis=0)])
-        carry1 = np.sum(FCTU1,axis=0)
-        carry2 = np.sum(FCTU2,axis=0)
-        carry3 = np.sum(FCTU3,axis=0)
-        carry4 = np.sum(FCTU4,axis=0)
-        FCTUS = np.vstack((carry1,carry2,carry3,carry4))
-        FCTUSL = FU * self.xcl
-        FCTUSU = FU * self.xcu
-        FUk = np.dot(self.xk,FCTUS)
-        FUkl = FU * self.xkl
-        FUku = FU * self.xku
-        pg = np.array([np.sum(FCTUS * self.yieldg,axis=0)])
-        pd = np.array([np.sum(FCTUS * self.yieldd,axis=0)])
-        pr = np.array([np.sum(FCTUS * self.yieldr,axis=0)])
-        CO = change(self.i_day,Y,Y_old)
-        cdurate = range_restrict(self.ful,self.fuu,np.array([np.sum(init_FTU,axis=0)]))
-        compostion = range_restrict(FCTUSL,FCTUSU,FCTUS)
-        oil_property = range_restrict(FUkl,FUku,FUk)
-        productg = range_restrict(self.pgl,self.pgu,pg)
-        productd = range_restrict(self.pdl,self.pdu,pd)
-        productr = range_restrict(self.prl,self.pru,pr)
-        cdurate_penalty = np.sum(cdurate) * self.penalty#处理量不处于上下限内
-        composition_penalty = np.sum(compostion) * self.penalty#原油组成不处于上下限内
-        property_penalty = np.sum(oil_property) * self.penalty#原油性质不处于上下限内
-        product_penalty = (np.sum(productg) + np.sum(productd) + np.sum(productr))*self.penalty#产品量不处于上下限内
-        change_penalty = np.sum(CO) * self.coc
-        source_penalty = np.sum(supplychange) * self.penalty / 2
-        oil_cost = np.dot(self.price,np.sum(FCTUS,axis = 1))
-        
-        penalty = np.array([np.array(extra_penalty).reshape(1,),np.array(tankstorage_penalty).reshape(1,),np.array(composition_penalty).reshape(1,),np.array(product_penalty).reshape(1,),np.array(source_penalty).reshape(1,),np.array(property_penalty).reshape(1,),np.array(delay_penalty).reshape(1,),np.array(change_penalty).reshape(1,),np.array(oil_cost).reshape(1,)]).reshape(9,1)
-        for i in range(6):
-            if penalty[i,0]!=0:
-                self.times[i]+=1
-        expense = delay_penalty + change_penalty + oil_cost
-        R_1 = self.w1 * np.dot(self.omega1[0:2,0],penalty[0:2,0])
-        R_2 = self.w2 * np.dot(self.omega1[2:5,0],penalty[2:5,0])
-        reward =  - R_1 - R_2 - 10000*np.sum(self.times)
-        # print('-------------------------------------------')
-        # print(R_1,R_2,10000*np.sum(self.times))
-        # print('-------------------------------------------')
-        total_expense = expense + expense_old
+            f = WCT/WT
+            [tstorage1,tstroage2] = range_restrict_Wt(self.wl,self.wu,WT)
+            tankstorage_penalty = (np.sum(tstorage1) + 3.0 * np.sum(tstroage2)) * self.penalty#储罐油量不处于上下限内
+            brine_penalty = np.sum(XT_old + XD > 1) * self.penalty
 
-        self.state = np.hstack((np.reshape(XT,(1,6)),np.reshape(WCT,(1,24)),np.reshape(f,(1,24)),np.reshape(Y,(1,12)),np.reshape(FTU,(1,12)),total_expense)).flatten()
-        self.trajectory.append(self.state)
-        done = bool(self.i_day>=self.ep_len-1)
-        reward = reward / 10000.0
-        #test normalization of reward
-        #reward/=10
-        #print(reward)
-        #print('---------------------------------------')
-        #print([brine_penalty/limit_penalty,process_penalty,expense])
-        #print('---------------------------------------')
-        self.i_day += 1
+            FU = np.array([np.sum(FTU,axis=0)])
+            carry1 = np.sum(FCTU1,axis=0)
+            carry2 = np.sum(FCTU2,axis=0)
+            carry3 = np.sum(FCTU3,axis=0)
+            carry4 = np.sum(FCTU4,axis=0)
+            FCTUS = np.vstack((carry1,carry2,carry3,carry4))
+            FCTUSL = FU * self.xcl
+            FCTUSU = FU * self.xcu
+            FUk = np.dot(self.xk,FCTUS)
+            FUkl = FU * self.xkl
+            FUku = FU * self.xku
+            pg = np.array([np.sum(FCTUS * self.yieldg,axis=0)])
+            pd = np.array([np.sum(FCTUS * self.yieldd,axis=0)])
+            pr = np.array([np.sum(FCTUS * self.yieldr,axis=0)])
+            CO = change(self.i_day,Y,Y_old)
+            cdurate = range_restrict(self.ful,self.fuu,np.array([np.sum(init_FTU,axis=0)]))
+            compostion = range_restrict(FCTUSL,FCTUSU,FCTUS)
+            oil_property = range_restrict(FUkl,FUku,FUk)
+            productg = range_restrict(self.pgl,self.pgu,pg)
+            productd = range_restrict(self.pdl,self.pdu,pd)
+            productr = range_restrict(self.prl,self.pru,pr)
+            cdurate_penalty = np.sum(cdurate) * self.penalty#处理量不处于上下限内
+            composition_penalty = np.sum(compostion) * self.penalty#原油组成不处于上下限内
+            property_penalty = np.sum(oil_property) * self.penalty#原油性质不处于上下限内
+            product_penalty = (np.sum(productg) + np.sum(productd) + np.sum(productr))*self.penalty#产品量不处于上下限内
+            change_penalty = np.sum(CO) * self.coc
+            source_penalty = np.sum(supplychange) * self.penalty / 2
+            oil_cost = np.dot(self.price,np.sum(FCTUS,axis = 1))
+            
+            penalty = np.array([np.array(extra_penalty).reshape(1,),np.array(tankstorage_penalty).reshape(1,),np.array(composition_penalty).reshape(1,),np.array(product_penalty).reshape(1,),np.array(source_penalty).reshape(1,),np.array(property_penalty).reshape(1,),np.array(delay_penalty).reshape(1,),np.array(change_penalty).reshape(1,),np.array(oil_cost).reshape(1,)]).reshape(9,1)
+            for i in range(6):
+                if penalty[i,0]!=0:
+                    self.times[i]+=1
+            expense = delay_penalty + change_penalty + oil_cost
+            R_1 = self.w1 * np.dot(self.omega1[0:2,0],penalty[0:2,0])
+            R_2 = self.w2 * np.dot(self.omega1[2:5,0],penalty[2:5,0])
+            reward =  - R_1 - R_2 #- 10000*np.sum(self.times)
+            # print('-------------------------------------------')
+            # print(R_1,R_2,10000*np.sum(self.times))
+            # print('-------------------------------------------')
+            total_expense = expense + expense_old
 
-        return self.state, reward, done, self.info 
+            self.state = np.hstack((np.reshape(XT,(1,6)),np.reshape(WCT,(1,24)),np.reshape(f,(1,24)),np.reshape(Y,(1,12)),np.reshape(FTU,(1,12)),total_expense)).flatten()
+            self.trajectory.append(self.state)
+            done = bool(self.i_day>=self.ep_len-1)
+            reward = reward / 100000.0
+            #test normalization of reward
+            #reward/=10
+            #print(reward)
+            #print('---------------------------------------')
+            #print([brine_penalty/limit_penalty,process_penalty,expense])
+            #print('---------------------------------------')
+            self.i_day += 1
+
+            return self.state, reward, done, self.info 
 
     def seed(self, seed=None):
         self.random_seed_ref = seed
